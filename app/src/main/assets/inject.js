@@ -93,11 +93,33 @@
     }
 
     // ==================== AUTO-NAVIGATE TO RECOMMEND ====================
+    var recommendSwitched = false;
     function switchToRecommend() {
-        if (location.pathname === '/jingxuan') {
-            var tab = document.querySelector('a[href*="recommend"],.tab-recommend');
-            if (tab && !tab.classList.contains('A5Ifusz5')) {
+        if (recommendSwitched) return;
+        if (location.pathname === '/jingxuan' || location.pathname === '/') {
+            // Strategy 1: Find and click the "推荐" tab link
+            var tab = document.querySelector('a[href*="recommend"]');
+            if (!tab) tab = document.querySelector('[class*="tab-recommend"]');
+            if (!tab) {
+                // Strategy 2: Find by text content
+                var allLinks = document.querySelectorAll('a');
+                for (var i = 0; i < allLinks.length; i++) {
+                    if (allLinks[i].innerText?.trim() === '推荐') {
+                        tab = allLinks[i];
+                        break;
+                    }
+                }
+            }
+            if (tab) {
                 tab.click();
+                recommendSwitched = true;
+                return;
+            }
+            // Strategy 3: History API push + popstate
+            if (location.pathname !== '/recommend' && location.search.indexOf('recommend') === -1) {
+                history.pushState({}, '', '/jingxuan?recommend=1&from_nav=1');
+                window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+                recommendSwitched = true;
             }
         }
     }

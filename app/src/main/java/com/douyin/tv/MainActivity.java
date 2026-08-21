@@ -98,26 +98,35 @@ public class MainActivity extends Activity {
                     loadingOverlay.setVisibility(View.GONE);
                 }
                 if (newProgress >= 90) {
-                    // Unmute + auto-navigate to recommend tab + block live content
+                    // Unmute videos
+                    view.evaluateJavascript(
+                        "document.querySelectorAll('video').forEach(function(v){v.muted=false;v.volume=1.0;});",
+                        null
+                    );
+                    // Auto-switch to recommend tab (aggressive: try multiple times)
                     view.evaluateJavascript(
                         "(function(){" +
-                        // 1. Unmute all videos
-                        "document.querySelectorAll('video').forEach(function(v){v.muted=false;v.volume=1.0;});" +
-                        // 2. Click "推荐" tab if we're on jingxuan page
-                        "if(location.pathname==='/jingxuan'){" +
-                        "  var tab=document.querySelector('a[href*=\"recommend\"],.tab-recommend');" +
-                        "  if(tab&&!tab.classList.contains('A5Ifusz5'))tab.click();" +
+                        "if(location.pathname==='/jingxuan'||location.pathname==='/'){" +
+                        "  var clicked=false;" +
+                        // Try clicking "推荐" link
+                        "  var links=document.querySelectorAll('a');" +
+                        "  for(var i=0;i<links.length;i++){" +
+                        "    if(links[i].innerText.trim()==='推荐'&&!clicked){" +
+                        "      links[i].click();clicked=true;break;" +
+                        "    }" +
+                        "  }" +
+                        // Fallback: try by class
+                        "  if(!clicked){" +
+                        "    var t=document.querySelector('[class*=\"tab-recommend\"]');" +
+                        "    if(t)t.click();" +
+                        "  }" +
                         "}" +
-                        // 3. Block live stream content
+                        // Block live streams
                         "document.querySelectorAll('[class*=\"LivePlayer\"],[class*=\"LiveLink\"],[class*=\"time-live\"]').forEach(function(el){" +
-                        "  var p=el.closest('[class*=\"feed\"],[class*=\"card\"],[class*=\"item\"]')||el.parentElement;" +
+                        "  var p=el.closest('[class*=\"feed\"],[class*=\"card\"],[class*=\"item\"],[class*=\"waterfall\"]')||el.parentElement;" +
                         "  if(p)p.style.display='none';" +
                         "});" +
-                        // 4. Hide login popups that block the screen
-                        "document.querySelectorAll('[class*=\"login-mask\"],[class*=\"loginModal\"],[class*=\"login-dialog\"]').forEach(function(el){" +
-                        "  el.style.display='none';" +
-                        "});" +
-                        "})();", null
+                        "})()", null
                     );
                 }
             }
@@ -200,6 +209,25 @@ public class MainActivity extends Activity {
         mainHandler.post(() -> {
             if (loadingOverlay != null) loadingOverlay.setVisibility(View.GONE);
             injectCss();
+            // Retry recommend tab switch after delay (SPA may not be ready at page load)
+            mainHandler.postDelayed(() -> {
+                if (webView != null) {
+                    webView.evaluateJavascript(
+                        "(function(){" +
+                        "if(location.pathname==='/jingxuan'||location.pathname==='/'){" +
+                        "  var links=document.querySelectorAll('a');" +
+                        "  for(var i=0;i<links.length;i++){" +
+                        "    if(links[i].innerText.trim()==='推荐'){" +
+                        "      links[i].click();return;" +
+                        "    }" +
+                        "  }" +
+                        "  var t=document.querySelector('[class*=\"tab-recommend\"]');" +
+                        "  if(t)t.click();" +
+                        "}" +
+                        "})()", null
+                    );
+                }
+            }, 3000);
         });
     }
 
