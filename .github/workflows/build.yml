@@ -1,0 +1,107 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Accept Android SDK licenses
+      run: yes | sdkmanager --licenses || true
+
+    - name: Install build tools
+      run: sdkmanager "build-tools;34.0.0" "platforms;android-34"
+
+    - name: Cache Gradle packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Generate Gradle wrapper
+      run: |
+        # If gradle-wrapper.jar is missing or invalid, generate it
+        if [ ! -f gradle/wrapper/gradle-wrapper.jar ] || ! file gradle/wrapper/gradle-wrapper.jar | grep -q "Java archive"; then
+          echo "Generating Gradle wrapper..."
+          gradle wrapper --gradle-version 8.5
+        fi
+
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug --no-daemon
+
+    - name: Build Release APK
+      run: ./gradlew assembleRelease --no-daemon
+
+    - name: Sign Release APK
+      run: |
+        # Generate a debug signing key for release builds
+        keytool -genkeypair -v -keystore release.keystore \
+          -alias douyintv -keyalg RSA -keysize 2048 -validity 10000 \
+          -storepass android -keypass android \
+          -dname "CN=DouyinTV, OU=Dev, O=Dev, L=Beijing, ST=Beijing, C=CN"
+
+        # Align
+        ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v -p 4 \
+          app/build/outputs/apk/release/app-release-unsigned.apk \
+          app/build/outputs/apk/release/app-release-aligned.apk
+
+        # Sign
+        ${ANDROID_HOME}/build-tools/34.0.0/apksigner sign \
+          --ks release.keystore \
+          --ks-pass pass:android \
+          --key-pass pass:android \
+          --ks-key-alias douyintv \
+          app/build/outputs/apk/release/app-release-aligned.apk
+
+        # Rename
+        cp app/build/outputs/apk/release/app-release-aligned.apk \
+          app/build/outputs/apk/release/DouyinTV-v${{ github.ref_name || '1.0.0' }}.apk
+
+    - name: Upload Debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: DouyinTV-debug
+        path: app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 7
+
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: DouyinTV-release
+        path: app/build/outputs/apk/release/DouyinTV-*.apk
+        retention-days: 30
+
+    - name: Create Release (on tag)
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          app/build/outputs/apk/debug/app-debug.apk
+          app/build/outputs/apk/release/DouyinTV-*.apk
+        generate_release_notes: true

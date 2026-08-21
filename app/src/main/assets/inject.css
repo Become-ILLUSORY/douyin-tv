@@ -1,0 +1,71 @@
+/* DouyinTV - CSS Injection for TV optimization */
+
+/* Force dark mode - reduces eye strain on TV */
+html, body {
+    background: #0a0a0a !important;
+    color-scheme: dark !important;
+}
+
+/* Hide scrollbar - TV uses D-pad, not scroll */
+::-webkit-scrollbar {
+    display: none !important;
+}
+html {
+    scrollbar-width: none !important;
+}
+
+/* Hide text selection cursor */
+* {
+    cursor: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    -webkit-touch-callout: none !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
+}
+
+/* Larger touch/click targets for TV remote */
+a, button, [role="button"], [role="tab"], [role="menuitem"],
+[class*="tab"], [class*="Tab"], [class*="nav"], [class*="Nav"],
+[class*="sidebar"], [class*="menu"], [class*="item"] {
+    min-height: 44px !important;
+    min-width: 44px !important;
+}
+
+/* Hide mobile-specific UI */
+[class*="mobile"], [class*="Mobile"],
+[class*="app-download"], [class*="open-app"],
+[class*="bottom-bar"], [class*="bottomBar"] {
+    display: none !important;
+}
+
+/* Reduce animations for performance */
+*, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+}
+
+/* Video player: ensure it fills the screen properly */
+video {
+    object-fit: contain !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+}
+
+/* Make focused elements more visible for D-pad navigation */
+*:focus {
+    outline: 3px solid rgba(255, 60, 60, 0.9) !important;
+    outline-offset: 2px !important;
+    box-shadow: 0 0 10px rgba(255, 50, 50, 0.5) !important;
+}
+
+/* Reduce font rendering overhead */
+body {
+    -webkit-font-smoothing: antialiased !important;
+    text-rendering: optimizeSpeed !important;
+}
+
+/* Prevent pinch zoom */
+meta[name="viewport"] {
+    content: "width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" !important;
+}
