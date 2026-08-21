@@ -4,20 +4,22 @@ import android.app.Activity;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.KeyEvent;
-import android.view.View;
 import android.webkit.WebView;
 
 /**
- * D-pad remote control handler.
+ * D-pad remote → Douyin keyboard shortcuts.
  *
  * 默认模式:
- *   上/下  → 切换视频
- *   OK单击 → 暂停/继续
- *   OK双击 → 网页全屏播放
+ *   ↑/↓      → 翻页切换视频 (ArrowUp/ArrowDown)
+ *   ←/→      → 快进快退 (ArrowLeft/ArrowRight, 长按时2倍速)
+ *   OK单击    → 暂停/继续 (Space)
+ *   OK双击    → 网页内全屏 (Y)
+ *   菜单键    → 切换光标模式
  *
- * 光标模式 (菜单键切换):
- *   方向键 → 移动光标
- *   OK     → 左键 / 长按右键
+ * 光标模式:
+ *   ↑/↓/←/→  → 移动鼠标光标
+ *   OK单击    → 鼠标左键
+ *   OK长按    → 鼠标右键
  */
 public class CursorController {
 
@@ -27,31 +29,41 @@ public class CursorController {
 
     private static final int STEP_NORMAL = 60;
     private static final int STEP_SLOW = 15;
-    private int currentStep = STEP_NORMAL;
 
-    // Long-press for right-click (cursor mode)
-    private boolean okPressed = false;
+    // Long-press detection (cursor mode right-click)
+    private boolean okDownTracked = false;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private static final long LONG_PRESS_MS = 500;
     private final Runnable longPressRunnable = () -> {
-        if (okPressed) {
-            okPressed = false;
+        if (okDownTracked) {
+            okDownTracked = false;
             performRightClick();
         }
     };
 
-    // Double-click for fullscreen (default mode)
+    // Double-click detection (default mode fullscreen)
     private long lastOkUpTime = 0;
-    private static final long DOUBLE_CLICK_MS = 300;
-    private boolean pendingSingleClick = false;
+    private static final long DOUBLE_CLICK_MS = 350;
+    private boolean pendingSingle = false;
     private final Runnable singleClickRunnable = () -> {
-        if (pendingSingleClick) {
-            pendingSingleClick = false;
-            togglePlayPause();
+        if (pendingSingle) {
+            pendingSingle = false;
+            sendKey(" "); // Space = pause/play
         }
     };
 
-    private static final int SCROLL_AMOUNT = 400;
+    // Long-press repeat for arrow keys (fast-forward/rewind 2x)
+    private boolean arrowDown = false;
+    private int arrowKeyCode = 0;
+    private final Runnable arrowRepeatRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (arrowDown) {
+                sendKeyCode(arrowKeyCode);
+                handler.postDelayed(this, 200); // repeat every 200ms
+            }
+        }
+    };
 
     private final Activity activity;
     private final WebView webView;
@@ -73,47 +85,84 @@ public class CursorController {
 
     public boolean isCursorMode() { return cursorMode; }
 
-    // ==================== KEY HANDLING ====================
+    // ==================== KEY EVENTS ====================
 
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // MENU → toggle cursor mode
         if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_GUIDE) {
             toggleCursorMode();
             return true;
         }
-        if (cursorMode) return handleCursorKeyDown(keyCode, event);
-        return handleDefaultKeyDown(keyCode, event);
+
+        if (cursorMode) return handleCursorDown(keyCode, event);
+        return handleDefaultDown(keyCode, event);
     }
 
     public boolean onKeyUp(int keyCode, KeyEvent event) {
-        if (cursorMode) {
-            if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
-                    || keyCode == KeyEvent.KEYCODE_ENTER
-                    || keyCode == KeyEvent.KEYCODE_BUTTON_A) {
-                if (okPressed) {
-                    okPressed = false;
-                    handler.removeCallbacks(longPressRunnable);
-                    performLeftClick();
-                }
+        if (cursorMode) return handleCursorUp(keyCode, event);
+        return handleDefaultUp(keyCode, event);
+    }
+
+    // ==================== DEFAULT MODE ====================
+
+    private boolean handleDefaultDown(int keyCode, KeyEvent event) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_DPAD_UP:
+                // 切换上一个视频 → 发送 ArrowUp
+                sendKeyCode(KeyEvent.KEYCODE_DPAD_UP);
                 return true;
-            }
-            return false;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                // 切换下一个视频 → 发送 ArrowDown
+                sendKeyCode(KeyEvent.KEYCODE_DPAD_DOWN);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                // 快退 → 发送 ArrowLeft，开始长按重复
+                sendKeyCode(KeyEvent.KEYCODE_DPAD_LEFT);
+                arrowDown = true;
+                arrowKeyCode = KeyEvent.KEYCODE_DPAD_LEFT;
+                handler.removeCallbacks(arrowRepeatRunnable);
+                handler.postDelayed(arrowRepeatRunnable, 500);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                // 快进 → 发送 ArrowRight，开始长按重复
+                sendKeyCode(KeyEvent.KEYCODE_DPAD_RIGHT);
+                arrowDown = true;
+                arrowKeyCode = KeyEvent.KEYCODE_DPAD_RIGHT;
+                handler.removeCallbacks(arrowRepeatRunnable);
+                handler.postDelayed(arrowRepeatRunnable, 500);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_BUTTON_A:
+                // 单击=暂停, 双击=全屏 → 在onKeyUp处理
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private boolean handleDefaultUp(int keyCode, KeyEvent event) {
+        // Stop arrow repeat on release
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+            arrowDown = false;
+            handler.removeCallbacks(arrowRepeatRunnable);
+            return true;
         }
 
-        // Default mode: OK release → double-click detection
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
                 || keyCode == KeyEvent.KEYCODE_ENTER
                 || keyCode == KeyEvent.KEYCODE_BUTTON_A) {
             long now = System.currentTimeMillis();
             if (now - lastOkUpTime < DOUBLE_CLICK_MS) {
-                // Double click → fullscreen
+                // 双击 → 网页内全屏 (Y键)
                 handler.removeCallbacks(singleClickRunnable);
-                pendingSingleClick = false;
+                pendingSingle = false;
                 lastOkUpTime = 0;
-                toggleFullscreen();
+                sendKey("y");
             } else {
-                // Possible single click → wait to confirm
+                // 可能单击 → 延迟确认
                 lastOkUpTime = now;
-                pendingSingleClick = true;
+                pendingSingle = true;
                 handler.removeCallbacks(singleClickRunnable);
                 handler.postDelayed(singleClickRunnable, DOUBLE_CLICK_MS);
             }
@@ -124,106 +173,74 @@ public class CursorController {
 
     // ==================== CURSOR MODE ====================
 
-    private boolean handleCursorKeyDown(int keyCode, KeyEvent event) {
-        boolean shift = event.isLongPress();
-        currentStep = shift ? STEP_SLOW : STEP_NORMAL;
+    private boolean handleCursorDown(int keyCode, KeyEvent event) {
+        int step = event.isLongPress() ? STEP_SLOW : STEP_NORMAL;
         switch (keyCode) {
-            case KeyEvent.KEYCODE_DPAD_LEFT:  moveCursor(-currentStep, 0); return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT: moveCursor(currentStep, 0); return true;
-            case KeyEvent.KEYCODE_DPAD_UP:    moveCursor(0, -currentStep); return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:  moveCursor(0, currentStep); return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:  moveCursor(-step, 0); return true;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: moveCursor(step, 0); return true;
+            case KeyEvent.KEYCODE_DPAD_UP:    moveCursor(0, -step); return true;
+            case KeyEvent.KEYCODE_DPAD_DOWN:  moveCursor(0, step); return true;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_BUTTON_A:
-                if (!okPressed) {
-                    okPressed = true;
+                if (!okDownTracked) {
+                    okDownTracked = true;
                     handler.postDelayed(longPressRunnable, LONG_PRESS_MS);
                 }
                 return true;
-            case KeyEvent.KEYCODE_PAGE_UP:   webView.scrollBy(0, -SCROLL_AMOUNT); return true;
-            case KeyEvent.KEYCODE_PAGE_DOWN: webView.scrollBy(0, SCROLL_AMOUNT); return true;
+            case KeyEvent.KEYCODE_PAGE_UP:   webView.scrollBy(0, -400); return true;
+            case KeyEvent.KEYCODE_PAGE_DOWN: webView.scrollBy(0, 400); return true;
             case KeyEvent.KEYCODE_BACK: toggleCursorMode(); return true;
             default: return false;
         }
     }
 
-    // ==================== DEFAULT MODE ====================
-
-    private boolean handleDefaultKeyDown(int keyCode, KeyEvent event) {
-        switch (keyCode) {
-            case KeyEvent.KEYCODE_DPAD_UP:   navigateVideo("prev"); return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN: navigateVideo("next"); return true;
-            case KeyEvent.KEYCODE_DPAD_CENTER:
-            case KeyEvent.KEYCODE_ENTER:
-            case KeyEvent.KEYCODE_BUTTON_A:
-                // Handled in onKeyUp (double-click detection)
-                return true;
-            default: return false;
+    private boolean handleCursorUp(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                || keyCode == KeyEvent.KEYCODE_ENTER
+                || keyCode == KeyEvent.KEYCODE_BUTTON_A) {
+            if (okDownTracked) {
+                okDownTracked = false;
+                handler.removeCallbacks(longPressRunnable);
+                performLeftClick();
+            }
+            return true;
         }
+        return false;
     }
 
-    // ==================== VIDEO NAVIGATION ====================
+    // ==================== KEY SENDING ====================
 
-    private void navigateVideo(String direction) {
-        String js =
-            "(function(){" +
-            "var dir='" + direction + "';" +
-            "var cards=document.querySelectorAll('[class*=\"video-card\"],[class*=\"videoCard\"],[class*=\"feed-card\"],[class*=\"feedCard\"],[class*=\"waterfall\"]>div,[class*=\"list\"]>div>div');" +
-            "if(cards.length<2)cards=document.querySelectorAll('main li,[class*=\"content\"] li,[class*=\"main\"]>div>div>div');" +
-            "if(cards.length<2){window.scrollBy(0,dir==='next'?window.innerHeight*0.85:-window.innerHeight*0.85);return;}" +
-            "var mid=window.innerHeight/2,bestIdx=0,bestDist=Infinity;" +
-            "cards.forEach(function(c,i){var r=c.getBoundingClientRect();var d=Math.abs(r.top+r.height/2-mid);if(d<bestDist){bestDist=d;bestIdx=i;}});" +
-            "var t=dir==='next'?Math.min(bestIdx+1,cards.length-1):Math.max(bestIdx-1,0);" +
-            "if(t!==bestIdx)cards[t].scrollIntoView({behavior:'smooth',block:'center'});" +
-            "else window.scrollBy(0,dir==='next'?window.innerHeight*0.85:-window.innerHeight*0.85);" +
+    /** Send a keyboard character key to the WebView (for Space, Y, etc.) */
+    private void sendKey(String keyChar) {
+        String js = "(function(){" +
+            "var e=new KeyboardEvent('keydown',{key:'" + keyChar + "',bubbles:true,cancelable:true});" +
+            "document.dispatchEvent(e);" +
+            "var e2=new KeyboardEvent('keyup',{key:'" + keyChar + "',bubbles:true,cancelable:true});" +
+            "document.dispatchEvent(e2);" +
             "})();";
         webView.evaluateJavascript(js, null);
     }
 
-    // ==================== PLAY/PAUSE ====================
-
-    private void togglePlayPause() {
-        String js =
-            "(function(){" +
-            "var vs=document.querySelectorAll('video');" +
-            "if(!vs.length)return;" +
-            "var best=null,ba=0;" +
-            "vs.forEach(function(v){var r=v.getBoundingClientRect();var a=Math.max(0,Math.min(r.bottom,innerHeight)-Math.max(r.top,0));if(a>ba){ba=a;best=v;}});" +
-            "if(!best)return;" +
-            "best.click();" +
-            "var r=best.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;" +
-            "['mousedown','mouseup','click'].forEach(function(t){best.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window,clientX:cx,clientY:cy,button:0}));});" +
-            "var btn=document.querySelector('[class*=\"play\"],[class*=\"Play\"],[class*=\"pause\"],[class*=\"Pause\"] button');" +
-            "if(btn)btn.click();" +
+    /** Send a DPAD key code to the WebView as a keyboard event */
+    private void sendKeyCode(int keyCode) {
+        String key;
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_DPAD_UP:    key = "ArrowUp"; break;
+            case KeyEvent.KEYCODE_DPAD_DOWN:  key = "ArrowDown"; break;
+            case KeyEvent.KEYCODE_DPAD_LEFT:  key = "ArrowLeft"; break;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: key = "ArrowRight"; break;
+            default: return;
+        }
+        String js = "(function(){" +
+            "var e=new KeyboardEvent('keydown',{key:'" + key + "',keyCode:" + keyCode + ",bubbles:true,cancelable:true});" +
+            "document.dispatchEvent(e);" +
+            "document.activeElement.dispatchEvent(e);" +
             "})();";
         webView.evaluateJavascript(js, null);
     }
 
-    // ==================== FULLSCREEN ====================
-
-    private void toggleFullscreen() {
-        // Use JavaScript Fullscreen API on the video element
-        String js =
-            "(function(){" +
-            "var v=document.querySelector('video');" +
-            "if(!v)return;" +
-            // Try to find the player container (xgplayer or similar)
-            "var p=v.closest('[class*=\"player\"],[class*=\"xgplayer\"],[class*=\"video-container\"]')||v.parentElement;" +
-            "if(!p)p=v;" +
-            // Request fullscreen on the player container, fallback to document
-            "if(p.requestFullscreen)p.requestFullscreen();" +
-            "else if(p.webkitRequestFullscreen)p.webkitRequestFullscreen();" +
-            "else if(p.msRequestFullscreen)p.msRequestFullscreen();" +
-            "else if(v.requestFullscreen)v.requestFullscreen();" +
-            "else if(v.webkitRequestFullscreen)v.webkitRequestFullscreen();" +
-            "else{document.documentElement.webkitRequestFullscreen();}" +
-            // Also unmute
-            "v.muted=false;v.volume=1.0;" +
-            "})();";
-        webView.evaluateJavascript(js, null);
-    }
-
-    // ==================== CURSOR MODE ====================
+    // ==================== CURSOR ====================
 
     private void toggleCursorMode() {
         cursorMode = !cursorMode;

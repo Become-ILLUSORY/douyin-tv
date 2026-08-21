@@ -27,7 +27,7 @@ public class MainActivity extends Activity {
     private View loadingOverlay;
     private Handler mainHandler;
 
-    private static final String DOUYIN_HOME = "https://www.douyin.com/recommend";
+    private static final String DOUYIN_HOME = "https://www.douyin.com/?recommend=1";
     private static final String USER_AGENT_PC = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
             if (statusBar != null) {
                 statusBar.setVisibility(enabled ? View.VISIBLE : View.GONE);
                 if (enabled) {
-                    statusBar.setText("光标模式 [菜单键退出]");
+                    statusBar.setText("光标模式 | 菜单键退出");
                 }
             }
         });
