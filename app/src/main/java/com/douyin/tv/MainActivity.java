@@ -48,8 +48,8 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         webView = findViewById(R.id.webview);
-        statusBar = findViewById(R.statusBar);
-        loadingOverlay = findViewById(R.loadingOverlay);
+        statusBar = findViewById(R.id.status_bar);
+        loadingOverlay = findViewById(R.id.loading_overlay);
         mainHandler = new Handler(Looper.getMainLooper());
 
         setupWebView();
@@ -86,7 +86,7 @@ public class MainActivity extends Activity {
         settings.setDisplayZoomControls(false);
 
         // Set PC user agent to get Douyin desktop version
-        webView.setUserAgent(USER_AGENT_PC);
+        webView.getSettings().setUserAgentString(USER_AGENT_PC);
 
         // Enable mixed content (http resources on https page)
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);

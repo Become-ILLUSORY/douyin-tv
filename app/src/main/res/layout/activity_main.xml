@@ -11,23 +11,22 @@
 
     <!-- Status bar overlay -->
     <TextView
-        android:id="@+id/statusBar"
+        android:id="@+id/status_bar"
         android:layout_width="wrap_content"
-        android:layout_height="36dp"
+        android:layout_height="wrap_content"
         android:layout_gravity="top|end"
         android:layout_marginTop="8dp"
         android:layout_marginEnd="16dp"
         android:background="@drawable/status_bg"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:text="🖱️ 光标模式 [菜单键切换]"
+        android:padding="12dp"
+        android:text="光标模式 [菜单键退出]"
         android:textColor="@color/white"
         android:textSize="13sp"
         android:visibility="gone" />
 
     <!-- Loading overlay -->
     <LinearLayout
-        android:id="@+id/loadingOverlay"
+        android:id="@+id/loading_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@color/tv_bg"
@@ -36,9 +35,9 @@
         android:visibility="visible">
 
         <ProgressBar
+            android:id="@+id/progress_bar"
             android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:indeterminateTint="@color/cursor_color" />
+            android:layout_height="48dp" />
 
         <TextView
             android:layout_width="wrap_content"
