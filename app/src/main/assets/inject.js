@@ -92,34 +92,18 @@
         });
     }
 
-    // ==================== AUTO-NAVIGATE TO RECOMMEND ====================
-    var recommendSwitched = false;
+    // ==================== AUTO-NAVIGATE TO RECOMMEND (one-shot) ====================
+    var recommendTried = false;
     function switchToRecommend() {
-        if (recommendSwitched) return;
-        if (location.pathname === '/jingxuan' || location.pathname === '/') {
-            // Strategy 1: Find and click the "推荐" tab link
-            var tab = document.querySelector('a[href*="recommend"]');
-            if (!tab) tab = document.querySelector('[class*="tab-recommend"]');
-            if (!tab) {
-                // Strategy 2: Find by text content
-                var allLinks = document.querySelectorAll('a');
-                for (var i = 0; i < allLinks.length; i++) {
-                    if (allLinks[i].innerText?.trim() === '推荐') {
-                        tab = allLinks[i];
-                        break;
-                    }
-                }
-            }
-            if (tab) {
-                tab.click();
-                recommendSwitched = true;
+        if (recommendTried) return;
+        if (location.pathname !== '/jingxuan') return;
+        recommendTried = true;
+        // Find and click "推荐" link
+        var links = document.querySelectorAll('a');
+        for (var i = 0; i < links.length; i++) {
+            if (links[i].innerText?.trim() === '推荐') {
+                links[i].click();
                 return;
-            }
-            // Strategy 3: History API push + popstate
-            if (location.pathname !== '/recommend' && location.search.indexOf('recommend') === -1) {
-                history.pushState({}, '', '/jingxuan?recommend=1&from_nav=1');
-                window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
-                recommendSwitched = true;
             }
         }
     }
@@ -141,9 +125,8 @@
         hideLoginOverlay();
     }
 
-    // MutationObserver for SPA navigation
+    // MutationObserver for SPA navigation — only block live + unmute
     var observer = new MutationObserver(function() {
-        switchToRecommend();
         maintain();
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
