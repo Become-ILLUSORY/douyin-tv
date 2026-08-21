@@ -27,7 +27,7 @@ public class MainActivity extends Activity {
     private View loadingOverlay;
     private Handler mainHandler;
 
-    private static final String DOUYIN_HOME = "https://www.douyin.com";
+    private static final String DOUYIN_HOME = "https://www.douyin.com/recommend";
     private static final String USER_AGENT_PC = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -94,8 +94,14 @@ public class MainActivity extends Activity {
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onProgressChanged(WebView view, int newProgress) {
-                if (newProgress >= 80 && loadingOverlay != null) {
+                if (newProgress >= 50 && loadingOverlay != null) {
                     loadingOverlay.setVisibility(View.GONE);
+                }
+                if (newProgress >= 80) {
+                    view.evaluateJavascript(
+                        "document.querySelectorAll('video').forEach(function(v){v.muted=false;v.volume=1.0;});",
+                        null
+                    );
                 }
             }
         });

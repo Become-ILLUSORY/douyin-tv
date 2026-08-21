@@ -4,19 +4,20 @@ import android.app.Activity;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.KeyEvent;
+import android.view.View;
 import android.webkit.WebView;
 
 /**
- * D-pad remote control → virtual cursor / video navigation.
+ * D-pad remote control handler.
+ *
+ * 默认模式:
+ *   上/下  → 切换视频
+ *   OK单击 → 暂停/继续
+ *   OK双击 → 网页全屏播放
  *
  * 光标模式 (菜单键切换):
  *   方向键 → 移动光标
  *   OK     → 左键 / 长按右键
- *
- * 默认模式:
- *   上/下  → 切换视频 (上一个/下一个)
- *   OK     → 暂停/继续播放
- *   左/右  → 进度快退/快进 (由WebView焦点处理)
  */
 public class CursorController {
 
@@ -28,7 +29,7 @@ public class CursorController {
     private static final int STEP_SLOW = 15;
     private int currentStep = STEP_NORMAL;
 
-    // Long-press for right-click in cursor mode
+    // Long-press for right-click (cursor mode)
     private boolean okPressed = false;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private static final long LONG_PRESS_MS = 500;
@@ -36,6 +37,17 @@ public class CursorController {
         if (okPressed) {
             okPressed = false;
             performRightClick();
+        }
+    };
+
+    // Double-click for fullscreen (default mode)
+    private long lastOkUpTime = 0;
+    private static final long DOUBLE_CLICK_MS = 300;
+    private boolean pendingSingleClick = false;
+    private final Runnable singleClickRunnable = () -> {
+        if (pendingSingleClick) {
+            pendingSingleClick = false;
+            togglePlayPause();
         }
     };
 
@@ -59,30 +71,20 @@ public class CursorController {
         this.listener = l;
     }
 
-    public boolean isCursorMode() {
-        return cursorMode;
-    }
+    public boolean isCursorMode() { return cursorMode; }
 
     // ==================== KEY HANDLING ====================
 
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        // MENU → toggle cursor mode
         if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_GUIDE) {
             toggleCursorMode();
             return true;
         }
-
-        // ---------- CURSOR MODE ----------
-        if (cursorMode) {
-            return handleCursorKeyDown(keyCode, event);
-        }
-
-        // ---------- DEFAULT MODE (video navigation) ----------
+        if (cursorMode) return handleCursorKeyDown(keyCode, event);
         return handleDefaultKeyDown(keyCode, event);
     }
 
     public boolean onKeyUp(int keyCode, KeyEvent event) {
-        // Cursor mode: handle OK release (click vs long-press)
         if (cursorMode) {
             if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
                     || keyCode == KeyEvent.KEYCODE_ENTER
@@ -97,37 +99,39 @@ public class CursorController {
             return false;
         }
 
-        // Default mode: OK release → toggle play/pause
+        // Default mode: OK release → double-click detection
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
                 || keyCode == KeyEvent.KEYCODE_ENTER
                 || keyCode == KeyEvent.KEYCODE_BUTTON_A) {
-            togglePlayPause();
+            long now = System.currentTimeMillis();
+            if (now - lastOkUpTime < DOUBLE_CLICK_MS) {
+                // Double click → fullscreen
+                handler.removeCallbacks(singleClickRunnable);
+                pendingSingleClick = false;
+                lastOkUpTime = 0;
+                toggleFullscreen();
+            } else {
+                // Possible single click → wait to confirm
+                lastOkUpTime = now;
+                pendingSingleClick = true;
+                handler.removeCallbacks(singleClickRunnable);
+                handler.postDelayed(singleClickRunnable, DOUBLE_CLICK_MS);
+            }
             return true;
         }
-
         return false;
     }
 
-    // ==================== CURSOR MODE KEY HANDLING ====================
+    // ==================== CURSOR MODE ====================
 
     private boolean handleCursorKeyDown(int keyCode, KeyEvent event) {
         boolean shift = event.isLongPress();
         currentStep = shift ? STEP_SLOW : STEP_NORMAL;
-
         switch (keyCode) {
-            case KeyEvent.KEYCODE_DPAD_LEFT:
-                moveCursor(-currentStep, 0);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT:
-                moveCursor(currentStep, 0);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_UP:
-                moveCursor(0, -currentStep);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:
-                moveCursor(0, currentStep);
-                return true;
-
+            case KeyEvent.KEYCODE_DPAD_LEFT:  moveCursor(-currentStep, 0); return true;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: moveCursor(currentStep, 0); return true;
+            case KeyEvent.KEYCODE_DPAD_UP:    moveCursor(0, -currentStep); return true;
+            case KeyEvent.KEYCODE_DPAD_DOWN:  moveCursor(0, currentStep); return true;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_BUTTON_A:
@@ -136,136 +140,90 @@ public class CursorController {
                     handler.postDelayed(longPressRunnable, LONG_PRESS_MS);
                 }
                 return true;
-
-            case KeyEvent.KEYCODE_PAGE_UP:
-                webView.scrollBy(0, -SCROLL_AMOUNT);
-                return true;
-            case KeyEvent.KEYCODE_PAGE_DOWN:
-                webView.scrollBy(0, SCROLL_AMOUNT);
-                return true;
-
-            case KeyEvent.KEYCODE_BACK:
-                toggleCursorMode();
-                return true;
-
-            default:
-                return false;
+            case KeyEvent.KEYCODE_PAGE_UP:   webView.scrollBy(0, -SCROLL_AMOUNT); return true;
+            case KeyEvent.KEYCODE_PAGE_DOWN: webView.scrollBy(0, SCROLL_AMOUNT); return true;
+            case KeyEvent.KEYCODE_BACK: toggleCursorMode(); return true;
+            default: return false;
         }
     }
 
-    // ==================== DEFAULT MODE: VIDEO NAVIGATION ====================
+    // ==================== DEFAULT MODE ====================
 
     private boolean handleDefaultKeyDown(int keyCode, KeyEvent event) {
         switch (keyCode) {
-            case KeyEvent.KEYCODE_DPAD_UP:
-                // Switch to previous video
-                navigateVideo("prev");
-                return true;
-
-            case KeyEvent.KEYCODE_DPAD_DOWN:
-                // Switch to next video
-                navigateVideo("next");
-                return true;
-
-            case KeyEvent.KEYCODE_DPAD_LEFT:
-                // Let WebView handle (may focus on rewind button or do nothing)
-                return false;
-
-            case KeyEvent.KEYCODE_DPAD_RIGHT:
-                // Let WebView handle (may focus on forward button or do nothing)
-                return false;
-
+            case KeyEvent.KEYCODE_DPAD_UP:   navigateVideo("prev"); return true;
+            case KeyEvent.KEYCODE_DPAD_DOWN: navigateVideo("next"); return true;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_BUTTON_A:
-                // Handled in onKeyUp → togglePlayPause()
+                // Handled in onKeyUp (double-click detection)
                 return true;
-
-            default:
-                return false;
+            default: return false;
         }
     }
 
-    /**
-     * Navigate to prev/next video.
-     * Works on Douyin PC recommend/jingxuan pages where videos are in a scrollable list.
-     */
+    // ==================== VIDEO NAVIGATION ====================
+
     private void navigateVideo(String direction) {
         String js =
-            "(function() {" +
-            "  var dir = '" + direction + "';" +
-            // Strategy 1: Douyin PC single-video pages (scroll to sibling)
-            "  var cards = document.querySelectorAll('[class*=\"video-card\"], [class*=\"videoCard\"], [class*=\"feed-card\"], [class*=\"feedCard\"], [class*=\"waterfall\"] > div, [class*=\"list\"] > div > div');" +
-            "  if (cards.length < 2) {" +
-            // Fallback: try generic list items in main content area
-            "    cards = document.querySelectorAll('main li, [class*=\"content\"] li, [class*=\"main\"] > div > div > div');" +
-            "  }" +
-            "  if (cards.length < 2) {" +
-            // Last resort: scroll by viewport height
-            "    window.scrollBy(0, dir === 'next' ? window.innerHeight * 0.85 : -window.innerHeight * 0.85);" +
-            "    return;" +
-            "  }" +
-            // Find which card is most "visible" (closest to viewport center)
-            "  var mid = window.innerHeight / 2;" +
-            "  var bestIdx = 0;" +
-            "  var bestDist = Infinity;" +
-            "  cards.forEach(function(c, i) {" +
-            "    var r = c.getBoundingClientRect();" +
-            "    var center = r.top + r.height / 2;" +
-            "    var dist = Math.abs(center - mid);" +
-            "    if (dist < bestDist) { bestDist = dist; bestIdx = i; }" +
-            "  });" +
-            // Scroll to prev/next card
-            "  var targetIdx = dir === 'next' ? Math.min(bestIdx + 1, cards.length - 1) : Math.max(bestIdx - 1, 0);" +
-            "  if (targetIdx !== bestIdx) {" +
-            "    cards[targetIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });" +
-            "  } else {" +
-            // At boundary, scroll by viewport height
-            "    window.scrollBy(0, dir === 'next' ? window.innerHeight * 0.85 : -window.innerHeight * 0.85);" +
-            "  }" +
+            "(function(){" +
+            "var dir='" + direction + "';" +
+            "var cards=document.querySelectorAll('[class*=\"video-card\"],[class*=\"videoCard\"],[class*=\"feed-card\"],[class*=\"feedCard\"],[class*=\"waterfall\"]>div,[class*=\"list\"]>div>div');" +
+            "if(cards.length<2)cards=document.querySelectorAll('main li,[class*=\"content\"] li,[class*=\"main\"]>div>div>div');" +
+            "if(cards.length<2){window.scrollBy(0,dir==='next'?window.innerHeight*0.85:-window.innerHeight*0.85);return;}" +
+            "var mid=window.innerHeight/2,bestIdx=0,bestDist=Infinity;" +
+            "cards.forEach(function(c,i){var r=c.getBoundingClientRect();var d=Math.abs(r.top+r.height/2-mid);if(d<bestDist){bestDist=d;bestIdx=i;}});" +
+            "var t=dir==='next'?Math.min(bestIdx+1,cards.length-1):Math.max(bestIdx-1,0);" +
+            "if(t!==bestIdx)cards[t].scrollIntoView({behavior:'smooth',block:'center'});" +
+            "else window.scrollBy(0,dir==='next'?window.innerHeight*0.85:-window.innerHeight*0.85);" +
             "})();";
         webView.evaluateJavascript(js, null);
     }
 
-    /**
-     * Toggle video play/pause.
-     * Dispatches click on the video element or its play/pause button.
-     */
+    // ==================== PLAY/PAUSE ====================
+
     private void togglePlayPause() {
         String js =
-            "(function() {" +
-            // Find the main video element (most visible one)
-            "  var videos = document.querySelectorAll('video');" +
-            "  if (!videos.length) return;" +
-            "  var best = null;" +
-            "  var bestArea = 0;" +
-            "  videos.forEach(function(v) {" +
-            "    var r = v.getBoundingClientRect();" +
-            "    var vis = Math.max(0, Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0));" +
-            "    var area = vis * Math.max(0, Math.min(r.right, window.innerWidth) - Math.max(r.left, 0));" +
-            "    if (area > bestArea) { bestArea = area; best = v; }" +
-            "  });" +
-            "  if (!best) return;" +
-            // Try clicking the video element itself (most sites toggle play on click)
-            "  best.click();" +
-            // Also try dispatching a more realistic click event
-            "  var rect = best.getBoundingClientRect();" +
-            "  var cx = rect.left + rect.width / 2;" +
-            "  var cy = rect.top + rect.height / 2;" +
-            "  ['mousedown', 'mouseup', 'click'].forEach(function(type) {" +
-            "    best.dispatchEvent(new MouseEvent(type, {" +
-            "      bubbles: true, cancelable: true, view: window," +
-            "      clientX: cx, clientY: cy, button: 0" +
-            "    }));" +
-            "  });" +
-            // Also try clicking play/pause overlay button if exists
-            "  var btn = document.querySelector('[class*=\"play\"], [class*=\"Play\"], [class*=\"pause\"], [class*=\"Pause\"], [class*=\"xgplayer\"] button');" +
-            "  if (btn) btn.click();" +
+            "(function(){" +
+            "var vs=document.querySelectorAll('video');" +
+            "if(!vs.length)return;" +
+            "var best=null,ba=0;" +
+            "vs.forEach(function(v){var r=v.getBoundingClientRect();var a=Math.max(0,Math.min(r.bottom,innerHeight)-Math.max(r.top,0));if(a>ba){ba=a;best=v;}});" +
+            "if(!best)return;" +
+            "best.click();" +
+            "var r=best.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;" +
+            "['mousedown','mouseup','click'].forEach(function(t){best.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window,clientX:cx,clientY:cy,button:0}));});" +
+            "var btn=document.querySelector('[class*=\"play\"],[class*=\"Play\"],[class*=\"pause\"],[class*=\"Pause\"] button');" +
+            "if(btn)btn.click();" +
             "})();";
         webView.evaluateJavascript(js, null);
     }
 
-    // ==================== CURSOR MODE: MOVEMENT & CLICKS ====================
+    // ==================== FULLSCREEN ====================
+
+    private void toggleFullscreen() {
+        // Use JavaScript Fullscreen API on the video element
+        String js =
+            "(function(){" +
+            "var v=document.querySelector('video');" +
+            "if(!v)return;" +
+            // Try to find the player container (xgplayer or similar)
+            "var p=v.closest('[class*=\"player\"],[class*=\"xgplayer\"],[class*=\"video-container\"]')||v.parentElement;" +
+            "if(!p)p=v;" +
+            // Request fullscreen on the player container, fallback to document
+            "if(p.requestFullscreen)p.requestFullscreen();" +
+            "else if(p.webkitRequestFullscreen)p.webkitRequestFullscreen();" +
+            "else if(p.msRequestFullscreen)p.msRequestFullscreen();" +
+            "else if(v.requestFullscreen)v.requestFullscreen();" +
+            "else if(v.webkitRequestFullscreen)v.webkitRequestFullscreen();" +
+            "else{document.documentElement.webkitRequestFullscreen();}" +
+            // Also unmute
+            "v.muted=false;v.volume=1.0;" +
+            "})();";
+        webView.evaluateJavascript(js, null);
+    }
+
+    // ==================== CURSOR MODE ====================
 
     private void toggleCursorMode() {
         cursorMode = !cursorMode;
@@ -274,9 +232,7 @@ public class CursorController {
             cursorY = webView.getHeight() / 2f;
         }
         updateCursorPosition();
-        if (listener != null) {
-            listener.onCursorModeChanged(cursorMode);
-        }
+        if (listener != null) listener.onCursorModeChanged(cursorMode);
     }
 
     private void moveCursor(float dx, float dy) {
@@ -286,29 +242,20 @@ public class CursorController {
     }
 
     private void updateCursorPosition() {
-        String js = String.format(
-            "if(window.__tvCursor) window.__tvCursor.updatePosition(%f, %f, %b);",
-            cursorX, cursorY, cursorMode
-        );
-        webView.evaluateJavascript(js, null);
+        webView.evaluateJavascript(String.format(
+            "if(window.__tvCursor)window.__tvCursor.updatePosition(%f,%f,%b);",
+            cursorX, cursorY, cursorMode), null);
     }
 
     private void performLeftClick() {
-        String js = String.format(
-            "if(window.__tvCursor) window.__tvCursor.clickAt(%f, %f, 'left');",
-            cursorX, cursorY
-        );
-        webView.evaluateJavascript(js, null);
+        webView.evaluateJavascript(String.format(
+            "if(window.__tvCursor)window.__tvCursor.clickAt(%f,%f,'left');",
+            cursorX, cursorY), null);
     }
 
     private void performRightClick() {
-        String js = String.format(
-            "if(window.__tvCursor) window.__tvCursor.clickAt(%f, %f, 'right');",
-            cursorX, cursorY
-        );
-        webView.evaluateJavascript(js, null);
+        webView.evaluateJavascript(String.format(
+            "if(window.__tvCursor)window.__tvCursor.clickAt(%f,%f,'right');",
+            cursorX, cursorY), null);
     }
-
-    public float getCursorX() { return cursorX; }
-    public float getCursorY() { return cursorY; }
 }

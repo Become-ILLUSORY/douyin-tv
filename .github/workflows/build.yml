@@ -6,7 +6,7 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   build:
@@ -46,9 +46,7 @@ jobs:
 
     - name: Generate Gradle wrapper
       run: |
-        # If gradle-wrapper.jar is missing or invalid, generate it
         if [ ! -f gradle/wrapper/gradle-wrapper.jar ] || ! file gradle/wrapper/gradle-wrapper.jar | grep -q "Java archive"; then
-          echo "Generating Gradle wrapper..."
           gradle wrapper --gradle-version 8.5
         fi
 
@@ -58,30 +56,27 @@ jobs:
     - name: Build Release APK
       run: ./gradlew assembleRelease --no-daemon
 
+    - name: Decode keystore
+      run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+
     - name: Sign Release APK
       run: |
-        # Generate a debug signing key for release builds
-        keytool -genkeypair -v -keystore release.keystore \
-          -alias douyintv -keyalg RSA -keysize 2048 -validity 10000 \
-          -storepass android -keypass android \
-          -dname "CN=DouyinTV, OU=Dev, O=Dev, L=Beijing, ST=Beijing, C=CN"
-
         # Align
         ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v -p 4 \
           app/build/outputs/apk/release/app-release-unsigned.apk \
           app/build/outputs/apk/release/app-release-aligned.apk
 
-        # Sign
+        # Sign with repo secret keystore
         ${ANDROID_HOME}/build-tools/34.0.0/apksigner sign \
           --ks release.keystore \
-          --ks-pass pass:android \
-          --key-pass pass:android \
+          --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+          --key-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
           --ks-key-alias douyintv \
           app/build/outputs/apk/release/app-release-aligned.apk
 
         # Rename
         cp app/build/outputs/apk/release/app-release-aligned.apk \
-          app/build/outputs/apk/release/DouyinTV-v${{ github.ref_name || '1.0.0' }}.apk
+          app/build/outputs/apk/release/DouyinTV.apk
 
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
@@ -94,7 +89,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: DouyinTV-release
-        path: app/build/outputs/apk/release/DouyinTV-*.apk
+        path: app/build/outputs/apk/release/DouyinTV.apk
         retention-days: 30
 
     - name: Create Release (on tag)
@@ -103,5 +98,5 @@ jobs:
       with:
         files: |
           app/build/outputs/apk/debug/app-debug.apk
-          app/build/outputs/apk/release/DouyinTV-*.apk
+          app/build/outputs/apk/release/DouyinTV.apk
         generate_release_notes: true
