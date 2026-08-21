@@ -27,9 +27,9 @@ public class MainActivity extends Activity {
     private View loadingOverlay;
     private Handler mainHandler;
 
-    private static final String DOUYIN_HOME = "https://www.douyin.com/?recommend=1";
-    private static final String USER_AGENT_PC = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    private static final String DOUYIN_HOME = "https://www.douyin.com/jingxuan";
+    // Edge browser UA — Douyin PC web serves full desktop layout with this
+    private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -81,8 +81,8 @@ public class MainActivity extends Activity {
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
 
-        // Force PC user agent for Douyin desktop version
-        settings.setUserAgentString(USER_AGENT_PC);
+        // Edge UA for Douyin desktop version
+        settings.setUserAgentString(USER_AGENT);
 
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
 
@@ -97,10 +97,27 @@ public class MainActivity extends Activity {
                 if (newProgress >= 50 && loadingOverlay != null) {
                     loadingOverlay.setVisibility(View.GONE);
                 }
-                if (newProgress >= 80) {
+                if (newProgress >= 90) {
+                    // Unmute + auto-navigate to recommend tab + block live content
                     view.evaluateJavascript(
-                        "document.querySelectorAll('video').forEach(function(v){v.muted=false;v.volume=1.0;});",
-                        null
+                        "(function(){" +
+                        // 1. Unmute all videos
+                        "document.querySelectorAll('video').forEach(function(v){v.muted=false;v.volume=1.0;});" +
+                        // 2. Click "推荐" tab if we're on jingxuan page
+                        "if(location.pathname==='/jingxuan'){" +
+                        "  var tab=document.querySelector('a[href*=\"recommend\"],.tab-recommend');" +
+                        "  if(tab&&!tab.classList.contains('A5Ifusz5'))tab.click();" +
+                        "}" +
+                        // 3. Block live stream content
+                        "document.querySelectorAll('[class*=\"LivePlayer\"],[class*=\"LiveLink\"],[class*=\"time-live\"]').forEach(function(el){" +
+                        "  var p=el.closest('[class*=\"feed\"],[class*=\"card\"],[class*=\"item\"]')||el.parentElement;" +
+                        "  if(p)p.style.display='none';" +
+                        "});" +
+                        // 4. Hide login popups that block the screen
+                        "document.querySelectorAll('[class*=\"login-mask\"],[class*=\"loginModal\"],[class*=\"login-dialog\"]').forEach(function(el){" +
+                        "  el.style.display='none';" +
+                        "});" +
+                        "})();", null
                     );
                 }
             }

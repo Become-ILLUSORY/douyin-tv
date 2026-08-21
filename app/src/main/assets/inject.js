@@ -1,5 +1,5 @@
 /**
- * DouyinTV - Injected JS: virtual cursor + video navigation + resource blocking
+ * DouyinTV - Injected JS: virtual cursor + live stream blocking + unmute
  */
 (function() {
     'use strict';
@@ -7,8 +7,7 @@
     window.__douyinTV = true;
 
     // ==================== VIRTUAL CURSOR (lazy) ====================
-    var cursor = null, crossH = null, crossV = null;
-    var cursorCreated = false;
+    var cursor = null, crossH = null, crossV = null, cursorCreated = false;
 
     function ensureCursor() {
         if (cursorCreated) return;
@@ -64,55 +63,69 @@
         }
     };
 
-    // ==================== VIDEO: UNMUTE + AUTOPLAY ====================
+    // ==================== BLOCK LIVE STREAMS ====================
+    function blockLiveStreams() {
+        // Hide all live stream containers
+        document.querySelectorAll('[class*="LivePlayer"],[class*="LiveLink"],[class*="time-live-tag"]').forEach(function(el) {
+            // Walk up to find the feed item container
+            var p = el;
+            for (var i = 0; i < 5; i++) {
+                p = p.parentElement;
+                if (!p) break;
+                var cls = p.className || '';
+                // Stop at a reasonable container level
+                if (cls.includes('feed') || cls.includes('card') || cls.includes('item') || cls.includes('waterfall') || cls.includes('list')) {
+                    p.style.display = 'none';
+                    return;
+                }
+            }
+            // Fallback: hide the direct parent
+            if (el.parentElement) el.parentElement.style.display = 'none';
+        });
+    }
+
+    // ==================== UNMUTE VIDEOS ====================
     function unmuteVideos() {
         document.querySelectorAll('video').forEach(function(v) {
-            if (v.muted) { v.muted = false; }
-            if (v.volume < 0.5) { v.volume = 1.0; }
+            if (v.muted) v.muted = false;
+            if (v.volume < 0.5) v.volume = 1.0;
         });
     }
-    // Run on DOM changes (SPA navigation)
-    var observer = new MutationObserver(function() {
+
+    // ==================== AUTO-NAVIGATE TO RECOMMEND ====================
+    function switchToRecommend() {
+        if (location.pathname === '/jingxuan') {
+            var tab = document.querySelector('a[href*="recommend"],.tab-recommend');
+            if (tab && !tab.classList.contains('A5Ifusz5')) {
+                tab.click();
+            }
+        }
+    }
+
+    // ==================== HIDE LOGIN OVERLAY ====================
+    function hideLoginOverlay() {
+        // Don't remove the login button itself, just remove blocking overlays
+        document.querySelectorAll('[class*="login-mask"],[class*="loginModal"],[class*="login-dialog"],[class*="login-guide"]').forEach(function(el) {
+            if (el.style.position === 'fixed' || window.getComputedStyle(el).position === 'fixed') {
+                el.style.display = 'none';
+            }
+        });
+    }
+
+    // Run all maintenance tasks periodically
+    function maintain() {
+        blockLiveStreams();
         unmuteVideos();
+        hideLoginOverlay();
+    }
+
+    // MutationObserver for SPA navigation
+    var observer = new MutationObserver(function() {
+        switchToRecommend();
+        maintain();
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
-    setInterval(unmuteVideos, 3000);
-
-    // ==================== VIDEO NAVIGATION ====================
-    window.__tvVideoNav = function(dir) {
-        var videos = document.querySelectorAll('video');
-        if (!videos.length) {
-            window.scrollBy(0, dir === 'next' ? window.innerHeight * 0.85 : -window.innerHeight * 0.85);
-            return;
-        }
-        var best = null, bestArea = 0;
-        videos.forEach(function(v) {
-            var r = v.getBoundingClientRect();
-            var vis = Math.max(0, Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0));
-            if (vis > bestArea) { bestArea = vis; best = v; }
-        });
-        if (!best) return;
-        var parent = best.parentElement;
-        while (parent && parent !== document.body) {
-            var cs = window.getComputedStyle(parent);
-            if (cs.overflow === 'auto' || cs.overflow === 'scroll' ||
-                cs.overflowY === 'auto' || cs.overflowY === 'scroll') {
-                parent.scrollTop += dir === 'next' ? window.innerHeight * 0.85 : -window.innerHeight * 0.85;
-                return;
-            }
-            parent = parent.parentElement;
-        }
-        window.scrollBy(0, dir === 'next' ? window.innerHeight * 0.85 : -window.innerHeight * 0.85);
-    };
-
-    // ==================== VIDEO OPTIMIZATION ====================
-    function optimizeVideos() {
-        document.querySelectorAll('video').forEach(function(v) {
-            if (v.preload !== 'none') v.preload = 'metadata';
-            v.disablePictureInPicture = true;
-        });
-    }
-    setInterval(optimizeVideos, 5000);
+    setInterval(maintain, 2000);
 
     // Passive scroll
     document.addEventListener('scroll', function(){}, {passive:true});
@@ -122,5 +135,10 @@
         try { if (window.Android) window.Android.onPageReady(); } catch(e) {}
     }
     if (document.readyState === 'complete') signalReady();
-    else window.addEventListener('load', signalReady);
+    else window.addEventListener('load', function() {
+        signalReady();
+        // Initial run after page load
+        setTimeout(maintain, 1000);
+        setTimeout(switchToRecommend, 2000);
+    });
 })();
